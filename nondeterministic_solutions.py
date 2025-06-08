@@ -1,20 +1,27 @@
-from bezier_curve_creation import BezierCurve
+from functools import total_ordering
+
+from bezier_curve_creation import BezierCurve, BezierCurveMultiProcess
 import scipy as sp
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+import threading
+import os
 
 
 # class that executes the simulated annealing algorithm to reconstruct a Bezier curve
 # it takes samples from a Bezier curve (provides by BezierCurve class) and tries to find the control points of the Bezier curve
 # by minimizing the squared l2-norm between the sampled points and the points sampled from the created control points
 class SimulatedAnnealing:
-    def __init__(self, degree, num_points_sampled):
+    def __init__(self, degree, num_points_sampled, iterations= 5000):
         self.degree = degree
-        self.num_points_sampled = num_points_sampled
+        self.num_points_sampled = num_points_sampled # number of points sampled from the Bezier curve to reconstruct the control points
+        self.iterations = iterations # number of iterations for the simulated annealing algorithm
 
         # Create a BezierCurve instance and generate the curve
+        # self.bezier_curve = BezierCurveMultiProcess(6)
         self.bezier_curve = BezierCurve()
+
         self.bezier_curve.generate_curve(degree)
 
         self.sampled_points = self.bezier_curve.sample_curve(num_points_sampled)
@@ -25,12 +32,33 @@ class SimulatedAnnealing:
         self.par_end = None
 
 
-
     # takes control points which are the parameters in the simulated annealing algorithm -
     # compares the current parameters with the actual control points of the Bezier curve based on the squared l2-norm
     def calc_fitness(self, parameters):
+        points_same_coordinates_penality = 0
+
+        threshold = 30 # threshold for points that are too close to each other
+
+        amount_too_close = 0
+
+        for i in range(parameters.shape[0]-1):
+            amount_too_close += parameters[np.sum(np.abs(parameters-parameters[i])) < threshold].shape[0]
+            # if(amount_too_close != 0):
+            #     print(parameters[np.sum(np.abs(parameters-parameters[i])) < threshold])
+
+        points_same_coordinates_penality += amount_too_close * 1000000
+
+        # control_points_mean = np.mean(parameters)
+        #
+        # dist_to_mean = np.abs(parameters - control_points_mean)
+        #
+        # total_dist = np.sum(dist_to_mean)
+
+
+
         sample_from_par = self.bezier_curve.sample_curve(self.num_points_sampled, curve_to_sample=parameters)
-        fitness = np.sum(np.square(self.sampled_points - sample_from_par))
+        fitness = np.sum(np.square(self.sampled_points - sample_from_par)) + points_same_coordinates_penality
+
         return fitness
 
 
@@ -42,9 +70,21 @@ class SimulatedAnnealing:
         plt.legend()
         plt.show()
 
+
+    # cooling schedule function for the simulated annealing algorithm
+    def cosine_cooldown(self, i):
+        return 0.5*math.cos((math.pi * i )/ self.iterations) + 0.5
+
+    def exponential_cooldown(self, i):
+        return math.e ** (-0.001 * (i - 1000))
+
     def simulated_annealing(self):
         # initialize parameters with random control points
+        # randomly generate control points within a reasonable range
         par_cur = np.random.rand(self.bezier_curve.get_control_points().shape[0],self.bezier_curve.get_control_points().shape[1])
+
+        # fixed example control points for testing degree 4 Bezier curve
+        # par_cur = np.array([[0,0], [100,0],[100,100],[0, 100], [50,50]], dtype=float)
 
         # scale the parameters to a reasonable range based on the sampled points
         x_max_with_buffer = np.max(self.sampled_points[:, 0]) * 1.2 # 20% buffer
@@ -62,9 +102,9 @@ class SimulatedAnnealing:
 
         self.fitness_values.append(fit_cur)
 
-        for i in range(10000):
+        for i in range(self.iterations):
             # set new temperature based on the current iteration
-            temperature = math.e ** (-0.001 * (i - 1000))
+            temperature = self.exponential_cooldown(i)
             if i % 500 == 0:
                 print(f"Iteration {i}, Fit best: {fit_best}, Fit current: {fit_cur}, Temperature: {temperature}")
 
@@ -138,9 +178,11 @@ class SimulatedAnnealing:
         plt.show()
 
 
-sa = SimulatedAnnealing(degree=4, num_points_sampled=1000)
-sa.simulated_annealing()
-sa.plot_fitness()
-sa.plot_control_points()
-sa.plot_bezier_curve()
+if __name__ == '__main__':
+    sa = SimulatedAnnealing(degree=4, num_points_sampled=1000, iterations=4000)
+    for i in range (6):
+        sa.simulated_annealing()
+        sa.plot_fitness()
+        sa.plot_control_points()
+        sa.plot_bezier_curve()
 
