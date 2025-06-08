@@ -5,7 +5,7 @@ import scipy as sp
 import math
 import numpy as np
 import matplotlib.pyplot as plt
-import threading
+import multiprocessing as mp
 import os
 
 
@@ -13,7 +13,7 @@ import os
 # it takes samples from a Bezier curve (provides by BezierCurve class) and tries to find the control points of the Bezier curve
 # by minimizing the squared l2-norm between the sampled points and the points sampled from the created control points
 class SimulatedAnnealing:
-    def __init__(self, degree, num_points_sampled, iterations= 5000):
+    def __init__(self, degree, num_points_sampled, iterations= 5000, given_curve=None):
         self.degree = degree
         self.num_points_sampled = num_points_sampled # number of points sampled from the Bezier curve to reconstruct the control points
         self.iterations = iterations # number of iterations for the simulated annealing algorithm
@@ -22,7 +22,11 @@ class SimulatedAnnealing:
         # self.bezier_curve = BezierCurveMultiProcess(6)
         self.bezier_curve = BezierCurve()
 
-        self.bezier_curve.generate_curve(degree)
+        # using the given_curve feature, you can provide a specific set of control points to reconstruct
+        if given_curve is not None:
+            self.bezier_curve.set_control_points(given_curve)
+        else:
+            self.bezier_curve.generate_curve(degree)
 
         self.sampled_points = self.bezier_curve.sample_curve(num_points_sampled)
 
@@ -93,7 +97,7 @@ class SimulatedAnnealing:
         par_cur[:,0] *= (x_max_with_buffer)
         par_cur[:,1] *= (y_max_with_buffer)
 
-        self.plot_points(par_cur)
+        # self.plot_points(par_cur)
 
         par_best = par_cur.copy()
 
@@ -178,11 +182,70 @@ class SimulatedAnnealing:
         plt.show()
 
 
+    def plot_all(self):
+        fig, axs = plt.subplots(3, 1, figsize=(8, 18))
+
+        # Plot fitness values
+        axs[0].plot(self.fitness_values)
+        axs[0].set_title("Fitness Values Over Iterations")
+        axs[0].set_xlabel("Iteration")
+        axs[0].set_ylabel("Fitness Value")
+
+        # Plot control points
+        original_control_points = self.bezier_curve.get_control_points()
+        reconstructed_control_points = self.par_end
+        axs[1].scatter(original_control_points[:, 0], original_control_points[:, 1], color='blue',
+                       label='Original Control Points')
+        axs[1].scatter(reconstructed_control_points[:, 0], reconstructed_control_points[:, 1], color='red',
+                       label='Reconstructed Control Points')
+        axs[1].legend()
+        axs[1].set_title("Original vs Reconstructed Control Points")
+        axs[1].set_xlabel("X")
+        axs[1].set_ylabel("Y")
+
+        # Plot Bezier curves
+        t_values = np.linspace(0, 1, 10000)
+        reconstructed_bezier_curve = np.array([self.bezier_curve.calc_bezier_value(t, self.par_end) for t in t_values])
+        original_curve = np.array(
+            [self.bezier_curve.calc_bezier_value(t, self.bezier_curve.control_points) for t in t_values])
+        axs[2].scatter(reconstructed_bezier_curve[:, 0], reconstructed_bezier_curve[:, 1],
+                       label='Reconstructed Bezier Curve')
+        axs[2].scatter(original_curve[:, 0], original_curve[:, 1], label='Original Bezier Curve')
+        axs[2].set_title("Reconstructed Bezier Curve")
+        axs[2].set_xlabel("X")
+        axs[2].set_ylabel("Y")
+        axs[2].legend()
+
+        plt.tight_layout()
+        plt.show()
+
+
+
+def run_sa_plot(sa):
+    sa.simulated_annealing()
+    sa.plot_all()
+
 if __name__ == '__main__':
-    sa = SimulatedAnnealing(degree=4, num_points_sampled=1000, iterations=4000)
-    for i in range (6):
-        sa.simulated_annealing()
-        sa.plot_fitness()
-        sa.plot_control_points()
-        sa.plot_bezier_curve()
+    # sa = SimulatedAnnealing(degree=4, num_points_sampled=1000, iterations=100)
+
+    bezier_curve = BezierCurve()
+    bezier_curve.generate_curve(4)
+
+    curve_to_reconstruct = bezier_curve.get_control_points()
+
+    runs_on_same_curve = 8
+    num_processes = 8
+
+    sa_instances = [
+        SimulatedAnnealing(degree=4, num_points_sampled=1000, iterations=6000, given_curve=curve_to_reconstruct) for _ in
+        range(runs_on_same_curve)]
+
+    with mp.Pool(processes=num_processes) as pool:
+        pool.map(run_sa_plot, sa_instances)
+
+
+
+        # sa.plot_fitness()
+        # sa.plot_control_points()
+        # sa.plot_bezier_curve()
 

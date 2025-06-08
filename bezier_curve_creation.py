@@ -96,6 +96,9 @@ class BezierCurve:
     def get_control_points(self):
         return self.control_points
 
+    def set_control_points(self, control_points):
+        self.control_points = control_points
+
 # BezierCurve class for generating and sampling Bezier curves
 class BezierCurveMultiProcess:
     def __init__(self, num_processes=4):
@@ -276,6 +279,9 @@ class BezierCurveMultiProcess:
 
     def get_control_points(self):
         return self.control_points
+
+    def set_control_points(self, control_points):
+        self.control_points = control_points
 
 
 
