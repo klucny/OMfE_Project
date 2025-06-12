@@ -48,12 +48,12 @@ class SimulatedAnnealing:
         return np.sum(np.abs(self.bezier_curve.get_control_points() - self.par_end))
 
 
-        # takes control points which are the parameters in the simulated annealing algorithm -
+    # takes control points which are the parameters in the simulated annealing algorithm -
     # compares the current parameters with the actual control points of the Bezier curve based on the squared l2-norm
     def calc_fitness(self, parameters):
         points_same_coordinates_penality = 0
 
-        threshold = 10 # threshold below which points that are considered too close to each other
+        threshold = 5 # threshold below which points that are considered too close to each other
 
         amount_too_close = 0 # amount of points that are too close to each other -> will be penalized in the fitness function
 
@@ -66,6 +66,9 @@ class SimulatedAnnealing:
 
 
         sample_from_par = self.bezier_curve.sample_curve(self.num_points_sampled, curve_to_sample=parameters)
+
+
+        assert(sample_from_par.shape == self.sampled_points.shape), "Sampled points from the Bezier curve and sampled points from the parameters must have the same shape"
 
         # try to keep fitness function as low as possible
         fitness = np.sum(np.square(self.sampled_points - sample_from_par)) + points_same_coordinates_penality
@@ -89,6 +92,10 @@ class SimulatedAnnealing:
 
         # compute weighted probabilities to move in certain direction
         for index, parameter in enumerate(par_cur):
+            if index == 0 or index == par_cur.shape[0] - 1:
+                # first and last point should not be changed
+                continue
+
             changed_parameters = par_cur
 
             # fitness_x = np.zeros(3, dtype=float)
@@ -136,6 +143,17 @@ class SimulatedAnnealing:
 
 
 
+    # start_point = first_sampled_point
+    # end_point = last_sampled_point
+    # inbetween points are evenly spaced points on the Bezier curve
+    def start_points_on_curve(self):
+        par_initial = self.sampled_points[::self.num_points_sampled // (self.degree+1)]
+        assert(par_initial.shape[0]== self.degree + 1), "Number of initial parameters must match degree + 1"
+        assert np.all(par_initial[0]== self.sampled_points[0]), "First point must be the first sampled point"
+        par_initial[-1]  = self.sampled_points[-1]  # ensure last point is the last sampled point
+
+        return par_initial
+
 
        # actual simulated annealing algorithm
     def simulated_annealing(self):
@@ -144,7 +162,7 @@ class SimulatedAnnealing:
         # par_cur = np.random.rand(self.bezier_curve.get_control_points().shape[0],self.bezier_curve.get_control_points().shape[1])
 
         # fixed control points starting all at (0,0)
-        par_cur = np.zeros((self.bezier_curve.get_control_points().shape[0], self.bezier_curve.get_control_points().shape[1]), dtype=float)
+        # par_cur = np.zeros((self.bezier_curve.get_control_points().shape[0], self.bezier_curve.get_control_points().shape[1]), dtype=float)
 
         # fixed control points starting all at (50,50)
         # par_cur = np.full((self.bezier_curve.get_control_points().shape[0], self.bezier_curve.get_control_points().shape[1]), 50, dtype=float)
@@ -152,12 +170,17 @@ class SimulatedAnnealing:
         # fixed example control points for testing degree 4 Bezier curve
         # par_cur = np.array([[0,0], [100,0],[100,100],[0, 100], [50,50]], dtype=float)
 
+        # points evenly spaced on sampled points
+        par_cur = self.start_points_on_curve()
+
+        # self.plot_starting_and_og_sampled(par_cur)
+
         # scale the parameters to a reasonable range based on the sampled points
+        # comment out if starting points already scaled
         x_max_with_buffer = np.max(self.sampled_points[:, 0]) * 1.2 # 20% buffer
         y_max_with_buffer = np.max(self.sampled_points[:, 1]) * 1.2 # 20% buffer
-
-        par_cur[:,0] *= (x_max_with_buffer)
-        par_cur[:,1] *= (y_max_with_buffer)
+        # par_cur[:,0] *= (x_max_with_buffer)
+        # par_cur[:,1] *= (y_max_with_buffer)
 
 
         par_best = par_cur.copy()
@@ -167,8 +190,16 @@ class SimulatedAnnealing:
 
         self.fitness_values.append(fit_cur)
 
+        # Sanity Check: ensure the first and last points of the reconstructed curve match the sampled points
+        assert np.all( par_cur[0] == self.sampled_points[0]), f"First point must be the first sampled point"
+        assert np.all(par_cur[-1] == self.sampled_points[-1]), f"Last point must be the last sampled point"
+
 
         for i in range(self.iterations):
+            # self.plot_starting_and_og_sampled(par_cur)
+            # assert np.all(par_cur[0] == self.sampled_points[0]), f"Iteration {i}:First point must be the first sampled point"
+            # assert np.all(par_cur[-1] == self.sampled_points[-1]), f"Iteration {i}:Last point must be the last sampled point"
+
             if fit_cur > 30000:
                 self.max_range = 4
             elif fit_cur < 10000:
@@ -181,8 +212,10 @@ class SimulatedAnnealing:
             # randomly change the parameters within the defined range
 
             # straight-forward version
-            parameter_change = np.random.rand(self.degree + 1, 2) * self.max_range - (self.max_range / 2)
-            par_new = par_cur + parameter_change
+
+            parameter_change = np.random.rand(self.degree - 1, 2) * self.max_range - (self.max_range / 2)
+            par_new = par_cur
+            par_new[1:par_new.shape[0]-1] = par_cur[1:par_new.shape[0]-1] + parameter_change
 
             # lookahead version
             # if i % 10:
@@ -213,11 +246,27 @@ class SimulatedAnnealing:
             if i % (self.iterations/10) == 0:
                 print(f"Iteration {i}, Fit best: {fit_best}, Fit new: {fit_new}, Temperature: {temperature}")
 
+
         self.par_end = par_best
+        # Sanity Check: ensure the first and last points of the reconstructed curve match the sampled points
+        assert np.all(self.par_end[0] == self.sampled_points[0]), "First point must be the first sampled point"
+        assert np.all(self.par_end[-1] == self.sampled_points[-1]), "Last point must be the last sampled point"
+
         self.fitness_end = fit_best
 
 
 # ------------ PLOTTING FUNCTIONS ---------------
+
+    def plot_starting_and_og_sampled(self, starting_points):
+        plt.scatter(self.sampled_points[:, 0], self.sampled_points[:, 1], color='blue', label='Original Curve: Sampled Points')
+        plt.scatter(starting_points[:, 0], starting_points[:, 1], color='red', label='Reconstruction Starting Points', alpha=0.7)
+        plt.title("Sampled Points and Starting Points")
+        plt.xlabel("X")
+        plt.ylabel("Y")
+        plt.legend()
+        plt.show()
+
+
     def plot_fitness(self):
         plt.plot(self.fitness_values)
         plt.title("Fitness Values Over Iterations")
@@ -296,7 +345,7 @@ class SimulatedAnnealing:
 
         plt.tight_layout()
         plt.figtext(0.25, 0.01, f"Final Fitness: {self.fitness_end:.4f}", ha="center", fontsize=14, bbox={"facecolor":"white", "alpha":0.7, "pad":5})
-        plt.figtext(0.75, 0.01, f"Real Error: {self.calc_real_error():.4f}", ha="center", fontsize=14, bbox={"facecolor":"white", "alpha":0.7, "pad":5})
+        plt.figtext(0.75, 0.01, f"Control Point Error: {self.calc_real_error():.4f}", ha="center", fontsize=14, bbox={"facecolor":"white", "alpha":0.7, "pad":5})
 
         plt.show()
 
@@ -309,7 +358,7 @@ def run_sa_plot(sa):
 if __name__ == '__main__':
 
     # degree of curve to reconstruct
-    degree = 4
+    degree = 8
 
     # Create a BezierCurve instance and generate the curve
     bezier_curve = BezierCurve()
@@ -324,16 +373,26 @@ if __name__ == '__main__':
 
     # create a list of SimulatedAnnealing instances, each initialized with the same curve to reconstruct
     sa_instances = [
-        SimulatedAnnealing(degree=degree, num_points_sampled=200, iterations=30000, given_curve=curve_to_reconstruct) for _ in
+        SimulatedAnnealing(degree=degree, num_points_sampled=153, iterations=50000, given_curve=curve_to_reconstruct) for _ in
         range(runs_on_same_curve)]
+
+    # sa_instances_2 =  [SimulatedAnnealing(degree=degree, num_points_sampled=500, iterations=20000, given_curve=curve_to_reconstruct) for _ in
+    #     range(runs_on_same_curve)]
+
 
     # Use multiprocessing to run the simulated annealing algorithm on multiple instances in parallel
     with mp.Pool(processes=num_processes) as pool:
         pool.map(run_sa_plot, sa_instances)
 
+    # with mp.Pool(processes=num_processes) as pool:
+    #     pool.map(run_sa_plot, sa_instances_2)
 
 
         # sa.plot_fitness()
         # sa.plot_control_points()
         # sa.plot_bezier_curve()
+
+
+#TODO: Punkte auf curve intialisieren
+#TODO: Anfang und Ende der Kurve fixieren
 

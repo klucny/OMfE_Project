@@ -13,25 +13,6 @@ class SamplingType(Enum):
     UNIFORM = "uniform"
     RANDOM = "random"
 
-# Custom Thread class to return results from a thread
-class ReturnThread(Thread):
-    def __init__(self, group=None, target=None, name=None, args=(), kwargs={}, verbose=None):
-        # Initializing the Thread class
-        super().__init__(group, target, name, args, kwargs)
-        self._return = None
-
-    def run(self):
-        # Running the target function and storing the result
-        if self._target is not None:
-            self._return = self._target(*self._args, **self._kwargs)
-
-    def join(self, *args):
-        # Joining the thread and returning the result
-        super().join(*args)
-        return self._return
-
-
-
 
 # BezierCurve class for generating and sampling Bezier curves
 class BezierCurve:
