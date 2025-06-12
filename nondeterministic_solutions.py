@@ -14,7 +14,9 @@ import os
 # by minimizing the squared l2-norm between the sampled points and the points sampled from the created control points
 class SimulatedAnnealing:
     def __init__(self, degree, num_points_sampled, iterations= 5000, given_curve=None):
+        # degree of the Bezier curve to reconstruct
         self.degree = degree
+
         self.num_points_sampled = num_points_sampled # number of points sampled from the Bezier curve to reconstruct the control points
         self.iterations = iterations # number of iterations for the simulated annealing algorithm
 
@@ -22,57 +24,53 @@ class SimulatedAnnealing:
         # self.bezier_curve = BezierCurveMultiProcess(6)
         self.bezier_curve = BezierCurve()
 
-        # using the given_curve feature, you can provide a specific set of control points to reconstruct
+        # using the given_curve feature, you can provide a specific set of control points to reconstruct e.g. so that multiple runs can be executed on the same curve
         if given_curve is not None:
             self.bezier_curve.set_control_points(given_curve)
         else:
             self.bezier_curve.generate_curve(degree)
 
+        # sample points from the Bezier curve to reconstruct the control points
         self.sampled_points = self.bezier_curve.sample_curve(num_points_sampled)
 
-        self.max_range = 4 # maximum range for parameter changes (results in changes of min -30 to max +30)
+        # maximum range for parameter changes (i.e. value of  60 will result in changes of min -30 to max +30)
+        self.max_range = 4
 
+        # variables to store the final parameters and fitness values for plotting
         self.fitness_values = []
         self.par_end = None
+        self.fitness_end = None
+        self.probabilities = np.zeros((3,2,), dtype=float)  # probabilities for the look-ahead parameter change
+
+    # function that calculates the squared distance between the original and reconstructed Bezier curve
+    # this function can only be used after the simulated annealing algorithm has been executed
+    def calc_real_error(self):
+        return np.sum(np.abs(self.bezier_curve.get_control_points() - self.par_end))
 
 
-    # takes control points which are the parameters in the simulated annealing algorithm -
+        # takes control points which are the parameters in the simulated annealing algorithm -
     # compares the current parameters with the actual control points of the Bezier curve based on the squared l2-norm
     def calc_fitness(self, parameters):
         points_same_coordinates_penality = 0
 
-        threshold = 30 # threshold for points that are too close to each other
+        threshold = 10 # threshold below which points that are considered too close to each other
 
-        amount_too_close = 0
+        amount_too_close = 0 # amount of points that are too close to each other -> will be penalized in the fitness function
 
         for i in range(parameters.shape[0]-1):
             amount_too_close += parameters[np.sum(np.abs(parameters-parameters[i])) < threshold].shape[0]
-            # if(amount_too_close != 0):
-            #     print(parameters[np.sum(np.abs(parameters-parameters[i])) < threshold])
 
+        # if there are points that are too close to each other, add a penalty to the fitness function, the weight is currently set to 1000000 without much thought
         points_same_coordinates_penality += amount_too_close * 1000000
-
-        # control_points_mean = np.mean(parameters)
-        #
-        # dist_to_mean = np.abs(parameters - control_points_mean)
-        #
-        # total_dist = np.sum(dist_to_mean)
 
 
 
         sample_from_par = self.bezier_curve.sample_curve(self.num_points_sampled, curve_to_sample=parameters)
+
+        # try to keep fitness function as low as possible
         fitness = np.sum(np.square(self.sampled_points - sample_from_par)) + points_same_coordinates_penality
 
         return fitness
-
-
-    def plot_points(self, points, title="Points"):
-        plt.scatter(points[:, 0], points[:, 1], label=title)
-        plt.title("Sampled Points")
-        plt.xlabel("X")
-        plt.ylabel("Y")
-        plt.legend()
-        plt.show()
 
 
     # cooling schedule function for the simulated annealing algorithm
@@ -80,12 +78,76 @@ class SimulatedAnnealing:
         return 0.5*math.cos((math.pi * i )/ self.iterations) + 0.5
 
     def exponential_cooldown(self, i):
-        return math.e ** (-0.001 * (i - 1000))
+        return math.e ** (-(10/self.iterations) * i)
 
+
+    def look_ahead_parameter_change(self, par_cur, update_fitness=True):
+        # adapt step size to be in the three separate range
+        third_max_range = self.max_range / 3
+        x_steps = np.random.rand(par_cur.shape[0]) * third_max_range - (third_max_range / 2)
+        y_steps= np.random.rand(par_cur.shape[0]) * third_max_range - (third_max_range / 2)
+
+        # compute weighted probabilities to move in certain direction
+        for index, parameter in enumerate(par_cur):
+            changed_parameters = par_cur
+
+            # fitness_x = np.zeros(3, dtype=float)
+            # fitness_y = np.zeros(3, dtype=float)
+
+            # format (x1,y1), (x2,y2), (x3,y3)
+
+            if update_fitness:
+                for fit_idx, direction in enumerate([-1, 0, 1]):
+                    changed_parameters[index][0] += direction * third_max_range * 0.5
+                    self.probabilities[fit_idx][0] = self.calc_fitness(changed_parameters[index])
+                    changed_parameters[index][0] -= direction * third_max_range * 0.5
+
+
+                self.probabilities[0:3,0]= self.probabilities[0:3,0] / np.sum(self.probabilities[0:3,0])
+
+            choose_rand_x_interval = np.random.rand()
+
+            if choose_rand_x_interval < self.probabilities[0,0]:
+                par_cur[index][0] += x_steps[index] -third_max_range
+            elif choose_rand_x_interval < self.probabilities[0,0] + self.probabilities[1,0]:
+                par_cur[index][0] += x_steps[index]
+            else:
+                par_cur[index][0] += x_steps[index] + third_max_range
+
+            if update_fitness:
+                # y parameter change
+                for fit_idx, direction in enumerate([-1, 0, 1]):
+                    changed_parameters[index][1] += direction * third_max_range * 0.5
+                    self.probabilities[fit_idx][1] = self.calc_fitness(changed_parameters[index])
+                    changed_parameters[index][1] -= direction * third_max_range * 0.5
+
+                self.probabilities[0:3, 1] = self.probabilities[0:3, 1] / np.sum(self.probabilities[0:3, 1])
+
+            choose_rand_y_interval = np.random.rand()
+
+            if choose_rand_y_interval < self.probabilities[0,1]:
+                par_cur[index][1] += y_steps[index] - third_max_range
+            elif choose_rand_y_interval < self.probabilities[0,1] + self.probabilities[1,1]:
+                par_cur[index][1] += y_steps[index]
+            else:
+                par_cur[index][1] += y_steps[index] + third_max_range
+
+        return par_cur
+
+
+
+
+       # actual simulated annealing algorithm
     def simulated_annealing(self):
         # initialize parameters with random control points
         # randomly generate control points within a reasonable range
-        par_cur = np.random.rand(self.bezier_curve.get_control_points().shape[0],self.bezier_curve.get_control_points().shape[1])
+        # par_cur = np.random.rand(self.bezier_curve.get_control_points().shape[0],self.bezier_curve.get_control_points().shape[1])
+
+        # fixed control points starting all at (0,0)
+        par_cur = np.zeros((self.bezier_curve.get_control_points().shape[0], self.bezier_curve.get_control_points().shape[1]), dtype=float)
+
+        # fixed control points starting all at (50,50)
+        # par_cur = np.full((self.bezier_curve.get_control_points().shape[0], self.bezier_curve.get_control_points().shape[1]), 50, dtype=float)
 
         # fixed example control points for testing degree 4 Bezier curve
         # par_cur = np.array([[0,0], [100,0],[100,100],[0, 100], [50,50]], dtype=float)
@@ -97,7 +159,6 @@ class SimulatedAnnealing:
         par_cur[:,0] *= (x_max_with_buffer)
         par_cur[:,1] *= (y_max_with_buffer)
 
-        # self.plot_points(par_cur)
 
         par_best = par_cur.copy()
 
@@ -106,18 +167,29 @@ class SimulatedAnnealing:
 
         self.fitness_values.append(fit_cur)
 
+
         for i in range(self.iterations):
+            if fit_cur > 30000:
+                self.max_range = 4
+            elif fit_cur < 10000:
+                self.max_range = 0.2
+            else:
+                self.max_range = 2
             # set new temperature based on the current iteration
             temperature = self.exponential_cooldown(i)
-            if i % 500 == 0:
-                print(f"Iteration {i}, Fit best: {fit_best}, Fit current: {fit_cur}, Temperature: {temperature}")
-
 
             # randomly change the parameters within the defined range
-            parameter_change_x = (np.random.rand() * self.max_range) - (self.max_range / 2)
-            parameter_change_y = (np.random.rand() * self.max_range) - (self.max_range / 2)
 
-            par_new = par_cur + np.array([parameter_change_x, parameter_change_y])
+            # straight-forward version
+            parameter_change = np.random.rand(self.degree + 1, 2) * self.max_range - (self.max_range / 2)
+            par_new = par_cur + parameter_change
+
+            # lookahead version
+            # if i % 10:
+            #     par_new = self.look_ahead_parameter_change(par_cur)
+            # else:
+            #     par_new = self.look_ahead_parameter_change(par_cur, update_fitness=False)
+
             par_new[par_new < 0] = 0  # ensure parameters are non-negative
 
             par_new[:,0 > x_max_with_buffer] = x_max_with_buffer  # ensure x parameters do not exceed the max range
@@ -128,7 +200,6 @@ class SimulatedAnnealing:
             self.fitness_values.append(fit_new)
 
             if fit_new < fit_cur:
-
                 par_best = par_new
                 fit_best = fit_new
 
@@ -138,9 +209,15 @@ class SimulatedAnnealing:
             elif (math.e ** (abs(fit_new - fit_cur) / temperature)) > np.random.rand():
                 par_cur = par_new
 
+            # print update every 500 iterations
+            if i % (self.iterations/10) == 0:
+                print(f"Iteration {i}, Fit best: {fit_best}, Fit new: {fit_new}, Temperature: {temperature}")
+
         self.par_end = par_best
+        self.fitness_end = fit_best
 
 
+# ------------ PLOTTING FUNCTIONS ---------------
     def plot_fitness(self):
         plt.plot(self.fitness_values)
         plt.title("Fitness Values Over Iterations")
@@ -165,6 +242,7 @@ class SimulatedAnnealing:
         plt.show()
 
     # this function plots the reconstructed Bezier curve and the original Bezier curve (based on sampled points)
+    # this function plots the reconstructed Bezier curve and the original Bezier curve (based on sampled points)
     def plot_bezier_curve(self):
         t_values = np.linspace(0, 1, 10000)
         reconstructed_bezier_curve = np.array([self.bezier_curve.calc_bezier_value(t, self.par_end) for t in t_values])
@@ -186,7 +264,7 @@ class SimulatedAnnealing:
         fig, axs = plt.subplots(3, 1, figsize=(8, 18))
 
         # Plot fitness values
-        axs[0].plot(self.fitness_values)
+        axs[0].plot(self.fitness_values[20:])
         axs[0].set_title("Fitness Values Over Iterations")
         axs[0].set_xlabel("Iteration")
         axs[0].set_ylabel("Fitness Value")
@@ -204,19 +282,22 @@ class SimulatedAnnealing:
         axs[1].set_ylabel("Y")
 
         # Plot Bezier curves
-        t_values = np.linspace(0, 1, 10000)
+        t_values = np.linspace(0, 1, 20000)
         reconstructed_bezier_curve = np.array([self.bezier_curve.calc_bezier_value(t, self.par_end) for t in t_values])
         original_curve = np.array(
             [self.bezier_curve.calc_bezier_value(t, self.bezier_curve.control_points) for t in t_values])
         axs[2].scatter(reconstructed_bezier_curve[:, 0], reconstructed_bezier_curve[:, 1],
-                       label='Reconstructed Bezier Curve')
-        axs[2].scatter(original_curve[:, 0], original_curve[:, 1], label='Original Bezier Curve')
+                       label='Reconstructed Bezier Curve', color="red")
+        axs[2].scatter(original_curve[:, 0], original_curve[:, 1], label='Original Bezier Curve', color="blue")
         axs[2].set_title("Reconstructed Bezier Curve")
         axs[2].set_xlabel("X")
         axs[2].set_ylabel("Y")
         axs[2].legend()
 
         plt.tight_layout()
+        plt.figtext(0.25, 0.01, f"Final Fitness: {self.fitness_end:.4f}", ha="center", fontsize=14, bbox={"facecolor":"white", "alpha":0.7, "pad":5})
+        plt.figtext(0.75, 0.01, f"Real Error: {self.calc_real_error():.4f}", ha="center", fontsize=14, bbox={"facecolor":"white", "alpha":0.7, "pad":5})
+
         plt.show()
 
 
@@ -226,20 +307,27 @@ def run_sa_plot(sa):
     sa.plot_all()
 
 if __name__ == '__main__':
-    # sa = SimulatedAnnealing(degree=4, num_points_sampled=1000, iterations=100)
 
+    # degree of curve to reconstruct
+    degree = 4
+
+    # Create a BezierCurve instance and generate the curve
     bezier_curve = BezierCurve()
-    bezier_curve.generate_curve(4)
+    bezier_curve.generate_curve(degree)
 
+    # Get the control points of the generated Bezier curve, they will be passed to the SimulatedAnnealing instance executed by the multiprocess pool
     curve_to_reconstruct = bezier_curve.get_control_points()
 
-    runs_on_same_curve = 8
-    num_processes = 8
+    # Number of runs on the same curve and number of processes that will execute the specified number of runs
+    runs_on_same_curve = 10
+    num_processes = 10
 
+    # create a list of SimulatedAnnealing instances, each initialized with the same curve to reconstruct
     sa_instances = [
-        SimulatedAnnealing(degree=4, num_points_sampled=1000, iterations=6000, given_curve=curve_to_reconstruct) for _ in
+        SimulatedAnnealing(degree=degree, num_points_sampled=200, iterations=30000, given_curve=curve_to_reconstruct) for _ in
         range(runs_on_same_curve)]
 
+    # Use multiprocessing to run the simulated annealing algorithm on multiple instances in parallel
     with mp.Pool(processes=num_processes) as pool:
         pool.map(run_sa_plot, sa_instances)
 
