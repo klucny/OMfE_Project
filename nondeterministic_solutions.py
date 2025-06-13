@@ -213,15 +213,15 @@ class SimulatedAnnealing:
 
             # straight-forward version
 
-            parameter_change = np.random.rand(self.degree - 1, 2) * self.max_range - (self.max_range / 2)
-            par_new = par_cur
-            par_new[1:par_new.shape[0]-1] = par_cur[1:par_new.shape[0]-1] + parameter_change
+            # parameter_change = np.random.rand(self.degree - 1, 2) * self.max_range - (self.max_range / 2)
+            # par_new = par_cur
+            # par_new[1:par_new.shape[0]-1] = par_cur[1:par_new.shape[0]-1] + parameter_change
 
             # lookahead version
-            # if i % 10:
-            #     par_new = self.look_ahead_parameter_change(par_cur)
-            # else:
-            #     par_new = self.look_ahead_parameter_change(par_cur, update_fitness=False)
+            if i % 10:
+                par_new = self.look_ahead_parameter_change(par_cur)
+            else:
+                par_new = self.look_ahead_parameter_change(par_cur, update_fitness=False)
 
             par_new[par_new < 0] = 0  # ensure parameters are non-negative
 
@@ -372,12 +372,13 @@ if __name__ == '__main__':
     num_processes = 10
 
     # create a list of SimulatedAnnealing instances, each initialized with the same curve to reconstruct
-    sa_instances = [
-        SimulatedAnnealing(degree=degree, num_points_sampled=153, iterations=50000, given_curve=curve_to_reconstruct) for _ in
-        range(runs_on_same_curve)]
-
-    # sa_instances_2 =  [SimulatedAnnealing(degree=degree, num_points_sampled=500, iterations=20000, given_curve=curve_to_reconstruct) for _ in
+    # sa_instances = [
+    #     SimulatedAnnealing(degree=degree, num_points_sampled=207, iterations=50000, given_curve=curve_to_reconstruct) for _ in
     #     range(runs_on_same_curve)]
+
+    # currently only num_points_sampled % (degree + 1) == 0 is supported, because of the way the initial parameters are set on the curve
+    sa_instances =  [SimulatedAnnealing(degree=degree, num_points_sampled=108, iterations=17000, given_curve=curve_to_reconstruct) for _ in
+        range(runs_on_same_curve)]
 
 
     # Use multiprocessing to run the simulated annealing algorithm on multiple instances in parallel
