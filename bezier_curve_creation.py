@@ -20,6 +20,8 @@ class BezierCurve:
         self.control_points = []
         self.sampled_points = []
 
+        self.binomial_coefficients = None
+
     # generates Bezier curve control points of the specified degree
     def generate_curve(self, degree):
         if degree < 1:
@@ -32,13 +34,17 @@ class BezierCurve:
 
     # helper function that calculates the Bezier value for a given t-value and control points
     def calc_bezier_value(self, t, control_points):
+        if self.binomial_coefficients is None:
+            n = control_points.shape[0]-1
+            self.binomial_coefficients = np.array([sp.special.binom(n, i) for i in range(len(control_points))])
 
         result = np.zeros(2, dtype=float)
 
         n = control_points.shape[0] - 1
 
         for i in range(len(control_points)):
-            bernstein_poly = sp.special.binom(n, i) * ((1-t)**(n-i)) * (t**i)
+            # bernstein_poly = sp.special.binom(n, i) * ((1-t)**(n-i)) * (t**i)
+            bernstein_poly = self.binomial_coefficients[i] * ((1 - t) ** (n - i)) * (t ** i)
             result += bernstein_poly * control_points[i]
 
         return result
@@ -269,7 +275,7 @@ class BezierCurveMultiProcess:
 if __name__ == "__main__":
 
     num_points = 1001
-    degree = 5
+    degree = 8
 
     start_time = time.time()
 

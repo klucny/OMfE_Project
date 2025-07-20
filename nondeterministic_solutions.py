@@ -42,6 +42,7 @@ class SimulatedAnnealing:
         self.fitness_end = None
         self.probabilities = np.zeros((3,2,), dtype=float)  # probabilities for the look-ahead parameter change
 
+
     # function that calculates the squared distance between the original and reconstructed Bezier curve
     # this function can only be used after the simulated annealing algorithm has been executed
     def calc_real_error(self):
@@ -53,7 +54,7 @@ class SimulatedAnnealing:
     def calc_fitness(self, parameters):
         points_same_coordinates_penality = 0
 
-        threshold = 5 # threshold below which points that are considered too close to each other
+        threshold = 1 # threshold below which points that are considered too close to each other
 
         amount_too_close = 0 # amount of points that are too close to each other -> will be penalized in the fitness function
 
@@ -203,7 +204,7 @@ class SimulatedAnnealing:
             if fit_cur > 30000:
                 self.max_range = 4
             elif fit_cur < 10000:
-                self.max_range = 0.2
+                self.max_range = 2
             else:
                 self.max_range = 2
             # set new temperature based on the current iteration
@@ -211,23 +212,29 @@ class SimulatedAnnealing:
 
             # randomly change the parameters within the defined range
 
-            # straight-forward version
-
+            # straight-forward version that changes all parameters at once
             # parameter_change = np.random.rand(self.degree - 1, 2) * self.max_range - (self.max_range / 2)
             # par_new = par_cur
             # par_new[1:par_new.shape[0]-1] = par_cur[1:par_new.shape[0]-1] + parameter_change
 
-            # lookahead version
-            if i % 10:
-                par_new = self.look_ahead_parameter_change(par_cur)
-            else:
-                par_new = self.look_ahead_parameter_change(par_cur, update_fitness=False)
+            # straight-forward version that changes one parameter at a time
+            parameter_change = np.random.rand(1, 2) * self.max_range - (self.max_range / 2)
+            par_new = par_cur.copy()
+            index_to_change = np.random.randint(1, par_cur.shape[0] - 1)  # do not change first and last point
+            par_new[index_to_change] = par_cur[index_to_change] + parameter_change
 
-            par_new[par_new < 0] = 0  # ensure parameters are non-negative
+
+            # lookahead version
+            # if i % 10:
+            #     par_new = self.look_ahead_parameter_change(par_cur)
+            # else:
+            #     par_new = self.look_ahead_parameter_change(par_cur, update_fitness=False)
+
+            par_new[par_new < -20] = -20  # ensure parameters are > -20
 
             par_new[:,0 > x_max_with_buffer] = x_max_with_buffer  # ensure x parameters do not exceed the max range
             par_new[:,1 > y_max_with_buffer] = y_max_with_buffer  # ensure y parameters do not exceed the max range
-            par_new[par_new > 100] = 100  # ensure parameters do not exceed 100
+            par_new[par_new > 120] = 120  # ensure parameters do not exceed 120
 
             fit_new = self.calc_fitness(par_new)
             self.fitness_values.append(fit_new)
@@ -242,7 +249,7 @@ class SimulatedAnnealing:
             elif (math.e ** (abs(fit_new - fit_cur) / temperature)) > np.random.rand():
                 par_cur = par_new
 
-            # print update every 500 iterations
+            # print update
             if i % (self.iterations/10) == 0:
                 print(f"Iteration {i}, Fit best: {fit_best}, Fit new: {fit_new}, Temperature: {temperature}")
 
@@ -377,7 +384,7 @@ if __name__ == '__main__':
     #     range(runs_on_same_curve)]
 
     # currently only num_points_sampled % (degree + 1) == 0 is supported, because of the way the initial parameters are set on the curve
-    sa_instances =  [SimulatedAnnealing(degree=degree, num_points_sampled=108, iterations=17000, given_curve=curve_to_reconstruct) for _ in
+    sa_instances =  [SimulatedAnnealing(degree=degree, num_points_sampled=108, iterations=20000, given_curve=curve_to_reconstruct) for _ in
         range(runs_on_same_curve)]
 
 
