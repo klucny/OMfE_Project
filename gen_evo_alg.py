@@ -34,6 +34,8 @@ class GeneticAlgorithm:
         self.fitness_values_population_avg = []
         # stores the best parameters of the population for each iteration
         self.fitness_values_population_best = []
+
+        # stors the best final parameters and fitness values after the algorithm has been executed
         self.par_end = None
         self.fitness_end = None
     # function that calculates the squared distance between the original and reconstructed Bezier control points
@@ -63,9 +65,9 @@ class GeneticAlgorithm:
 
         # try to keep fitness function as low as possible
         fitness = np.sum(np.square(self.sampled_points - sample_from_par)) + points_same_coordinates_penality
-
         return fitness
 
+    # calculates the fitness for the whole population, calls calc_fitness for each individual in the population and returns the fitness values sorted by fitness (best=lowest first)
     def calc_fitness_population(self, population):
         # calculate the fitness for each individual in the population
         fitness_values = np.array([np.array([idx, self.calc_fitness(individual)]) for idx, individual in enumerate(population)])
@@ -73,28 +75,65 @@ class GeneticAlgorithm:
         fitness_values = fitness_values[fitness_values[:, 1].argsort()]
         return fitness_values
 
-    # start_point = first_sampled_point
-    # end_point = last_sampled_point
-    # inbetween points are evenly spaced points on the Bezier curve
-    def start_points_on_curve(self):
-        par_initial = self.sampled_points[::self.num_points_sampled // (self.degree + 1)]
-        assert (par_initial.shape[0] == self.degree + 1), "Number of initial parameters must match degree + 1"
-        assert np.all(par_initial[0] == self.sampled_points[0]), "First point must be the first sampled point"
-        par_initial[-1] = self.sampled_points[-1]  # ensure last point is the last sampled point
-
-        return par_initial
-
+    # as the names suggest: this function generates the initial parameters for the population at random
     def start_points_random(self):
         par_initial = np.random.rand(self.population_size, self.degree + 1, 2) * 100
+        par_initial[:,0,:] = self.sampled_points[0]  # ensure first point is the first sampled point
+        par_initial[:,-1,:] = self.sampled_points[-1]
         assert (par_initial.shape[1] == self.degree + 1), "Number of initial parameters must match degree + 1"
-
         return par_initial
 
-    def curve_sex(self):
-        pass
+    # evenly spaces the control points line by line
+    # THIS DOES NOT WORK WELL
+    def start_points_evenly_spaced(self):
+        x_distribution = np.linspace(0,100, self.degree + 1)
+        y_distribution = np.linspace(0,100, self.population_size)
+        par_initial = np.array([[x, y]  for y in y_distribution for x in x_distribution]).reshape(self.population_size, self.degree + 1, 2)
+        print(par_initial)
+        assert (par_initial.shape[1] == self.degree + 1), "Number of initial parameters must match degree + 1"
+        return par_initial
+
+    # ------------------------- BELOW: Algorithm implementations -------------------------
+
+    # this is the random algorithm, which always randomly generates new parameters and calculates the fitness for each iteration
+    # used as a sanity check to see if the genetic algorithm is actually better than just randomly generating parameters
+    def rand_alg(self):
+        par_cur = self.start_points_random()
+        # par_cur = self.start_points_evenly_spaced()
+
+        # calculate the fitness for the initial population
+        fitness_values = self.calc_fitness_population(par_cur)
+
+        fit_best = fitness_values[0, 1]
+        par_best = par_cur[fitness_values[0, 0].astype(int)]
+
+        self.fitness_values_population_best.append(fit_best)
+        self.fitness_values_population_avg.append(np.mean(fitness_values[:, 1]))
+
+        for i in range(self.iterations):
+            # print update
+            if i % (self.iterations / 10) == 0:
+                print(f"Iteration {i}, Fit best: {fit_best}, Fit new: {fitness_values[0, 1]}")
+
+            new_population = self.start_points_random()
+            par_cur = new_population
+
+            # calculate the fitness for the new population
+            fitness_values = self.calc_fitness_population(par_cur)
+
+            if fitness_values[0, 1] < fit_best:
+                fit_best = fitness_values[0, 1]
+                par_best = par_cur[fitness_values[0, 0].astype(int)]
+
+            self.fitness_values_population_best.append(fitness_values[0, 1])
+            self.fitness_values_population_avg.append(np.mean(fitness_values[:, 1]))
+
+        self.par_end = par_best
+        self.fitness_end = fit_best
 
     def gen_alg(self):
         par_cur = self.start_points_random()
+        # par_cur = self.start_points_evenly_spaced()
 
         # calculate the fitness for the initial population
         fitness_values = self.calc_fitness_population(par_cur)
@@ -115,13 +154,22 @@ class GeneticAlgorithm:
             pairs = [(x, y) for x in range(self.n) for y in range(x + 1, self.n)]
 
             for idx, (i, j) in enumerate(pairs):
-                new_population[idx] = par_cur[fitness_values[i, 0].astype(int)] + par_cur[fitness_values[j, 0].astype(int)]
+                # weighted version
+                l1_norm = np.linalg.norm([i+1,j+1], ord = 1)
+                weights = [(1+i)/l1_norm, (1+j)/l1_norm]
+                assert(np.sum(weights) == 1.0)
+                # note that the fitness values are sorted, so the first value is the best one -> smaller  value -> switch weights such that the better one has a higher weight
+                new_population[idx] = par_cur[fitness_values[i, 0].astype(int)] *weights[1]  + par_cur[fitness_values[j, 0].astype(int)]*weights[0]
 
+                # unweighted version
+                # new_population[idx] = par_cur[fitness_values[i, 0].astype(int)] *0.5 + par_cur[fitness_values[j, 0].astype(int)] *0.5
 
-            par_cur = new_population/2
+            par_cur = new_population
+
             # calculate the fitness for the new population
             fitness_values = self.calc_fitness_population(par_cur)
 
+            # check if the best fitness value has improved
             if fitness_values[0,1] < fit_best:
                 fit_best = fitness_values[0, 1]
                 par_best = par_cur[fitness_values[0, 0].astype(int)]
@@ -129,11 +177,15 @@ class GeneticAlgorithm:
             self.fitness_values_population_best.append(fitness_values[0,1])
             self.fitness_values_population_avg.append(np.mean(fitness_values[:, 1]))
 
-
-
+        # save the best parameters and fitness values
         self.par_end = par_best
         self.fitness_end = fit_best
 
+
+
+
+
+    # ------------------------- BELOW: Plotting function -------------------------
     def plot(self):
         plt.figure(figsize=(10, 5))
         plt.plot(self.fitness_values_population_best, label="Best Fitness")
@@ -180,21 +232,6 @@ class GeneticAlgorithm:
         plt.ylabel("Y")
         plt.show()
 
-    def plot_control_points(self):
-        original_control_points = self.bezier_curve.get_control_points()
-        reconstructed_control_points = self.par_end
-        print("Original Control Points:\n", original_control_points)
-        print("Reconstructed Control Points:\n", reconstructed_control_points)
-
-        plt.scatter(original_control_points[:, 0], original_control_points[:, 1], color='blue',
-                    label='Original Control Points')
-        plt.scatter(reconstructed_control_points[:, 0], reconstructed_control_points[:, 1], color='red',
-                    label='Reconstructed Control Points')
-        plt.legend()
-        plt.title("Original vs Reconstructed Control Points")
-        plt.xlabel("X")
-        plt.ylabel("Y")
-        plt.show()
 
     def plot_all(self):
         fig, axs = plt.subplots(3, 1, figsize=(8, 18))
@@ -236,7 +273,10 @@ class GeneticAlgorithm:
 
         plt.show()
 
+
 if __name__ == '__main__':
+    # Note that mutation and crossover rates are not used in the current implementation of the genetic algorithm
     genetic = GeneticAlgorithm(degree=6, num_points_sampled=100, iterations=10, mutation_rate=0.1, crossover_rate=0.1)
+    # genetic.rand_alg()
     genetic.gen_alg()
     genetic.plot_all()
