@@ -400,7 +400,3 @@ if __name__ == '__main__':
         # sa.plot_control_points()
         # sa.plot_bezier_curve()
 
-
-#TODO: Punkte auf curve intialisieren
-#TODO: Anfang und Ende der Kurve fixieren
-
